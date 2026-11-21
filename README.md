@@ -224,3 +224,57 @@ done | sort -u > /tmp/ip_aktif.txt
 DEVICE=$(wc -l < /tmp/ip_aktif.txt)
 echo "Device : $DEVICE DEVICE"
 ````
+## upgrade xray
+### bckp
+````
+cp /etc/xray/config.json /root/config.json.BACKUP
+cp /etc/xray/config.json /root/config.json.bak-$(date +%F-%H%M)
+cat /root/config.json.BACKUP | grep '###' | head -n 20
+````
+````
+systemctl stop xray
+systemctl disable xray
+rm -rf /usr/local/bin/xray /usr/local/etc/xray /etc/xray/xray
+rm -f /etc/systemd/system/xray.service
+````
+````
+apt update -y && apt install -y curl unzip wget
+mkdir -p /tmp/xray-baru && cd /tmp/xray-baru
+VER=$(curl -s https://api.github.com/repos/XTLS/Xray-core/releases/latest | grep tag_name | cut -d'"' -f4)
+echo "Versi terbaru: $VER"
+wget https://github.com/XTLS/Xray-core/releases/download/$VER/Xray-linux-64.zip
+unzip -o Xray-linux-64.zip
+mkdir -p /usr/local/bin /usr/local/etc/xray /var/log/xray
+cp xray /usr/local/bin/xray
+cp geoip.dat geosite.dat /usr/local/etc/xray/
+chmod +x /usr/local/bin/xray
+/usr/local/bin/xray version
+````
+````
+mkdir -p /etc/xray
+cp /root/config.json.BACKUP /etc/xray/config.json
+cat > /etc/systemd/system/xray.service << 'EOF'
+[Unit]
+Description=Xray Service
+After=network.target nss-lookup.target
+[Service]
+User=root
+ExecStart=/usr/local/bin/xray run -config /etc/xray/config.json
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=1048576
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable xray
+systemctl restart xray
+systemctl status xray --no-pager -l
+````
+## cek
+````
+ss -tlnp | grep -E '443|80|8080'
+tail -n 50 /var/log/xray/error.log
+babi
+````
+
