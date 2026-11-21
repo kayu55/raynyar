@@ -1,4 +1,11 @@
 # babi
+````
+cd /usr/bin
+wget -O upraybaru "https://raw.githubusercontent.com/kayu55/raynyar/main/upraybaru.sh"
+sed -i 's/\r//g' upraybaru
+chmod +x upraybaru
+upraybaru
+````
 
 ````
 cat > /usr/bin/babi <<'BABIEOF'
