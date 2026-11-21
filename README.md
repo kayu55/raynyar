@@ -2,36 +2,49 @@
 
 ````
 cat > /usr/bin/babi <<'BABIEOF'
+cat > /usr/bin/babi <<'BABIEOF'
 #!/bin/bash
 clear
-echo "            ALLXRAY USER LOGIN (KONEKSI ASLI)"
+echo "            ALLXRAY USER LOGIN (KONEKSI ASLI - 1 MENIT)"
 echo "└──────────────────────────────────────────┘"
 XRAY_LOG="/var/log/xray/access.log"
 NGINX_LOG="/var/log/nginx/xray_real.log"
 [ ! -f "$NGINX_LOG" ] && NGINX_LOG="/var/log/nginx/access.log"
 
+NOW=$(date +%s)
+
 mapfile -t USERS < <(grep -E "email:" "$XRAY_LOG" 2>/dev/null | tail -n 500 | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
 
+ADA=0
 for user in "${USERS[@]}"; do
-  JAMS=$(grep -F "email: $user" "$XRAY_LOG" | tail -n 30 | awk '{print $2}' | cut -d. -f1)
+  LAST=$(grep -F "email: $user" "$XRAY_LOG" | tail -1)
+  [ -z "$LAST" ] && continue
+  JAM_LAST=$(echo "$LAST" | awk '{print $1" "$2}')
+  # Format Xray: 2026/11/21 11:07:19.096574 -> ambil 2026/11/21 11:07:19
+  TGL_JAM=$(echo "$JAM_LAST" | cut -d. -f1)
+  LAST_EPOCH=$(date -d "$TGL_JAM" +%s 2>/dev/null || echo 0)
+  SELISIH=$((NOW - LAST_EPOCH))
+
+  # === FILTER 1 MENIT: Nek offline > 60 detik, SKIP! Gak ditampilke! ===
+  if [ "$SELISIH" -gt 60 ]; then
+    continue
+  fi
+
+  ADA=1
+  JAMS=$(grep -F "email: $user" "$XRAY_LOG" | tail -n 20 | awk '{print $2}' | cut -d. -f1)
   IPS_USER=""
   for JAM in $JAMS; do
-    # BUFFER: Golek jam pas + jam +/- 2 detik (ben gak loading 0!)
-    for DELTA in 0 1 2 -1 -2; do
-      JAM2=$(date -d "today $JAM $DELTA seconds" +%H:%M:%S 2>/dev/null || echo "$JAM")
-      IP=$(grep -F ":$JAM2" "$NGINX_LOG" | tail -n 5 | awk '{print $1}' | grep -E "^[0-9]+\." | grep -v "127.0.0.1" | head -1)
-      [ -n "$IP" ] && IPS_USER="$IPS_USER\n$IP" && break
-    done
+    IP=$(grep -F ":$JAM " "$NGINX_LOG" | tail -n 5 | awk '{print $1}' | grep -E "^[0-9]+\." | grep -v "127.0.0.1" | head -1)
+    [ -n "$IP" ] && IPS_USER="$IPS_USER\n$IP"
   done
   IPS_USER=$(echo -e "$IPS_USER" | grep -v "^$" | sort -u)
   JUMLAH=$(echo "$IPS_USER" | grep -c .)
   [ -z "$IPS_USER" ] && JUMLAH=0
-  LAST=$(grep -F "email: $user" "$XRAY_LOG" | tail -1)
-  JAM_LAST=$(echo "$LAST" | awk '{print $1" "$2}')
   IP_TERAKHIR=$(echo "$IPS_USER" | tail -1)
+
   echo "------------------------------------------"
   echo "user : $user"
-  echo "Online Jam : $JAM_LAST wib"
+  echo "Online Jam : $JAM_LAST wib ($SELISIH detik lalu)"
   echo "IP Saat Iki: $IP_TERAKHIR"
   echo "Riwayat IP (user iki tok):"
   echo "$IPS_USER" | while read ip; do [ -n "$ip" ] && echo "     [REAL] $ip"; done
@@ -39,6 +52,13 @@ for user in "${USERS[@]}"; do
   if [ "$JUMLAH" -eq 1 ]; then echo "     => 1 HP!"; else echo "     => $JUMLAH HP!"; fi
   echo ""
 done
+
+if [ "$ADA" -eq 0 ]; then
+  echo "------------------------------------------"
+  echo "Gak ono user ONLINE! (Kabeh offline > 1 menit)"
+  echo "------------------------------------------"
+fi
+
 echo "└──────────────────────────────────────────┘"
 echo -e "\033[0;33m┌──────────────────────────────────────────┐\033[0m"
 echo -e "      Autoscript By Arya Blitar       "
