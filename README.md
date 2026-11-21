@@ -9,11 +9,12 @@ upraybaru
 
 ````
 cat > /usr/bin/babi <<'BABIEOF'
-cat > /usr/bin/babi <<'BABIEOF'
 #!/bin/bash
 clear
-echo "            ALLXRAY USER LOGIN (KONEKSI ASLI - 1 MENIT)"
-echo "└──────────────────────────────────────────┘"
+echo  ""
+echo "┌───────────────────────────────────────────┐"
+echo " ALLXRAY USER LOGIN (KONEKSI ASLI - 1 MENIT)"
+echo "└───────────────────────────────────────────┘"
 XRAY_LOG="/var/log/xray/access.log"
 NGINX_LOG="/var/log/nginx/xray_real.log"
 [ ! -f "$NGINX_LOG" ] && NGINX_LOG="/var/log/nginx/access.log"
