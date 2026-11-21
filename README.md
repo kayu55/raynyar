@@ -8,65 +8,35 @@ echo "            ALLXRAY USER LOGIN (KONEKSI ASLI)"
 echo "└──────────────────────────────────────────┘"
 XRAY_LOG="/var/log/xray/access.log"
 NGINX_LOG="/var/log/nginx/xray_real.log"
+[ ! -f "$NGINX_LOG" ] && NGINX_LOG="/var/log/nginx/access.log"
 
-# === NGITUNG KONEKSI, DUDU IP! ===
-# Format log baru: IP - [jam] "GET /path" status CONNECTION_ID waktu
-# CONNECTION_ID = 1 HP = 1 ID. 2 HP = 2 ID. IP ganti = ID tetep beda per HP, tapi nek reconnect = ID baru!
-# Dadi ngitung: jumlah CONNECTION_ID unik neng 60 detik terakhir = jumlah HP!
-
-MENIT1=$(date +"%d/%b/%Y:%H:%M")
-MENIT2=$(date -d "-1 minute" +"%d/%b/%Y:%H:%M")
-LOG_ALL=$(grep -F "[$MENIT1" "$NGINX_LOG" 2>/dev/null; grep -F "[$MENIT2" "$NGINX_LOG" 2>/dev/null)
-if [ -z "$LOG_ALL" ]; then
-  LOG_ALL=$(tail -n 100 "$NGINX_LOG" 2>/dev/null)
-fi
-LOG_ALL=$(echo "$LOG_ALL" | grep -E "/vless|/vmess|/trojan" | grep -v "205\.210\.")
-
-# Coba ngitung koneksi (kolom ke-6 = $connection, nek format lawas, kolom e beda, fallback ke IP)
-# Format baru: IP - [jam] "request" status CONNECTION
-JUMLAH_KONEKSI=$(echo "$LOG_ALL" | awk '{print $6}' | grep -E "^[0-9]+$" | sort -u | wc -l)
-JUMLAH_IP=$(echo "$LOG_ALL" | awk '{print $1}' | grep -E "^[0-9]+\." | sort -u | wc -l)
-IPS=$(echo "$LOG_ALL" | awk '{print $1}' | grep -E "^[0-9]+\." | sort -u)
-IP_TERAKHIR=$(echo "$LOG_ALL" | awk '{print $1}' | grep -E "^[0-9]+\." | tail -1)
-
-# Nek $connection durung ono (format lawas), ngitung IP tapi kasih warning!
-if [ "$JUMLAH_KONEKSI" -eq 0 ]; then
-  JUMLAH_KONEKSI=$JUMLAH_IP
-  MODE="FORMAT LAWAS - Ngitung IP (kurang akurat, update log_format disik!)"
-else
-  MODE="FORMAT BARU - Ngitung KONEKSI (akurat!)"
-fi
-
-mapfile -t USERS < <(grep -E "email:" "$XRAY_LOG" 2>/dev/null | tail -n 200 | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
-
-echo ""
-echo "Mode : $MODE"
-echo "Total Koneksi (60 detik): $JUMLAH_KONEKSI"
-echo "Total IP (60 detik): $JUMLAH_IP (IP ganti-ganti, ojo digawe patokan!)"
-echo "IP Saat Iki: $IP_TERAKHIR"
-echo "Riwayat IP:"
-echo "$IPS" | while read ip; do echo "     [REAL] $ip"; done
-echo "------------------------------------------"
+mapfile -t USERS < <(grep -E "email:" "$XRAY_LOG" 2>/dev/null | tail -n 500 | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
 
 for user in "${USERS[@]}"; do
+  JAMS=$(grep -F "email: $user" "$XRAY_LOG" | tail -n 30 | awk '{print $2}' | cut -d. -f1)
+  IPS_USER=""
+  for JAM in $JAMS; do
+    # BUFFER: Golek jam pas + jam +/- 2 detik (ben gak loading 0!)
+    for DELTA in 0 1 2 -1 -2; do
+      JAM2=$(date -d "today $JAM $DELTA seconds" +%H:%M:%S 2>/dev/null || echo "$JAM")
+      IP=$(grep -F ":$JAM2" "$NGINX_LOG" | tail -n 5 | awk '{print $1}' | grep -E "^[0-9]+\." | grep -v "127.0.0.1" | head -1)
+      [ -n "$IP" ] && IPS_USER="$IPS_USER\n$IP" && break
+    done
+  done
+  IPS_USER=$(echo -e "$IPS_USER" | grep -v "^$" | sort -u)
+  JUMLAH=$(echo "$IPS_USER" | grep -c .)
+  [ -z "$IPS_USER" ] && JUMLAH=0
   LAST=$(grep -F "email: $user" "$XRAY_LOG" | tail -1)
-  JAM=$(echo "$LAST" | awk '{print $1" "$2}')
+  JAM_LAST=$(echo "$LAST" | awk '{print $1" "$2}')
+  IP_TERAKHIR=$(echo "$IPS_USER" | tail -1)
+  echo "------------------------------------------"
   echo "user : $user"
-  echo "Online Jam : $JAM wib"
-  # Nek 1 user, device = jumlah koneksi! Dudu 1!
-  # Nek 2 user, device per user = total koneksi / jumlah user (nek GLOBAL)
-  if [ "${#USERS[@]}" -eq 1 ]; then
-    echo "Device : $JUMLAH_KONEKSI DEVICE"
-    if [ "$JUMLAH_KONEKSI" -eq 1 ]; then
-      echo "     => 1 HP, 1 koneksi"
-    elif [ "$JUMLAH_KONEKSI" -eq 2 ]; then
-      echo "     => 2 HP, 2 koneksi! (Senajan 1 user!)"
-    else
-      echo "     => $JUMLAH_KONEKSI HP!"
-    fi
-  else
-    echo "Device : $JUMLAH_KONEKSI DEVICE TOTAL (GLOBAL, dibagi $(( ${#USERS[@]} )) user)"
-  fi
+  echo "Online Jam : $JAM_LAST wib"
+  echo "IP Saat Iki: $IP_TERAKHIR"
+  echo "Riwayat IP (user iki tok):"
+  echo "$IPS_USER" | while read ip; do [ -n "$ip" ] && echo "     [REAL] $ip"; done
+  echo "Device : $JUMLAH DEVICE"
+  if [ "$JUMLAH" -eq 1 ]; then echo "     => 1 HP!"; else echo "     => $JUMLAH HP!"; fi
   echo ""
 done
 echo "└──────────────────────────────────────────┘"
