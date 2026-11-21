@@ -78,6 +78,133 @@ BABIEOF
 chmod +x /usr/bin/babi
 babi
 ````
+## babi 2
+````
+cat > /usr/bin/babi <<'BABIEOF'
+#!/bin/bash
+clear
+echo "┌──────────────────────────────────────────┐"
+echo " ALLXRAY USER LOGIN (KONEKSI ASLI - 1 MENIT)"
+echo "└──────────────────────────────────────────┘"
+XRAY_LOG="/var/log/xray/access.log"
+NGINX_LOG="/var/log/nginx/xray_real.log"
+[ ! -f "$NGINX_LOG" ] && NGINX_LOG="/var/log/nginx/access.log"
+NOW=$(date +%s)
+mapfile -t USERS < <(grep -E "email:" "$XRAY_LOG" 2>/dev/null | tail -n 500 | awk -F'email: ' '{print $2}' | awk '{print $1}' | sort -u)
+TOTAL=0
+LIST=""
+for u in "${USERS[@]}"; do
+  L=$(grep -F "email: $u" "$XRAY_LOG" | tail -1)
+  [ -z "$L" ] && continue
+  TJ=$(echo "$L" | awk '{print $1" "$2}' | cut -d. -f1)
+  EP=$(date -d "$TJ" +%s 2>/dev/null || echo 0)
+  D=$((NOW - EP)); [ "$D" -lt 0 ] && D=0
+  if [ "$D" -le 60 ]; then TOTAL=$((TOTAL+1)); LIST="$LIST $u"; fi
+done
+echo ""
+echo "TOTAL ONLINE : $TOTAL USER"
+echo "USER MASUK   :$LIST"
+echo ""
+NO=0
+for user in "${USERS[@]}"; do
+  LAST=$(grep -F "email: $user" "$XRAY_LOG" | tail -1)
+  [ -z "$LAST" ] && continue
+  JAM_LAST=$(echo "$LAST" | awk '{print $1" "$2}')
+  TGL_JAM=$(echo "$JAM_LAST" | cut -d. -f1)
+  LAST_EPOCH=$(date -d "$TGL_JAM" +%s 2>/dev/null || echo 0)
+  SELISIH=$((NOW - LAST_EPOCH))
+  if [ "$SELISIH" -lt 0 ]; then SELISIH=0; fi
+  if [ "$SELISIH" -gt 60 ]; then continue; fi
+  NO=$((NO+1))
+  JAMS=$(grep -F "email: $user" "$XRAY_LOG" | tail -n 20 | awk '{print $2}' | cut -d. -f1)
+  IPS_USER=""
+  for JAM in $JAMS; do
+    IP=$(grep -F ":$JAM " "$NGINX_LOG" | tail -n 5 | awk '{print $1}' | grep -E "^[0-9]+\." | grep -v "127.0.0.1" | head -1)
+    [ -n "$IP" ] && IPS_USER="$IPS_USER
+$IP"
+  done
+  IPS_USER=$(printf "%s\n" "$IPS_USER" | grep -v "^$" | sort -u)
+  JUMLAH=$(printf "%s\n" "$IPS_USER" | grep -c .)
+  [ -z "$IPS_USER" ] && JUMLAH=0
+  IP_TERAKHIR=$(printf "%s\n" "$IPS_USER" | tail -1)
+  tebak_app() {
+    local T="$1"
+    case "$T" in
+      *google*|*youtube*|*googlevideo*|*gstatic*) echo "GOOGLE/YOUTUBE"; return ;;
+      *facebook*|*fbcdn*|*instagram*|*whatsapp*) echo "META (FB/IG/WA)"; return ;;
+      *telegram*) echo "TELEGRAM"; return ;;
+      *tiktok*|*byte*|*byteoversea*) echo "TIKTOK"; return ;;
+      *shopee*) echo "SHOPEE"; return ;;
+      *netflix*) echo "NETFLIX"; return ;;
+      *spotify*) echo "SPOTIFY"; return ;;
+      *vidio*) echo "VIDIO"; return ;;
+    esac
+    case "$T" in
+      142.250.*|172.217.*|172.253.*|216.58.*|74.125.*|173.194.*|64.233.*|142.251.*|108.177.*) echo "GOOGLE/YOUTUBE"; return ;;
+      157.*|199.*|57.144.*|57.145.*|31.13.*|179.60.*|185.60.*|129.134.*|199.103.*) echo "META (FB/IG/WA)"; return ;;
+      149.154.*|91.108.*|91.105.*) echo "TELEGRAM"; return ;;
+      47.89.*|47.251.*|103.152.*|161.117.*|156.59.*|43.240.*|43.241.*) echo "TIKTOK"; return ;;
+      35.*|34.*|130.211.*|104.154.*) echo "GOOGLE CLOUD"; return ;;
+      15.*|52.*|54.*|3.*|18.*|13.*) echo "AMAZON AWS"; return ;;
+      104.*|172.67.*|104.21.*) echo "CLOUDFLARE CDN"; return ;;
+      23.*|167.82.*|167.86.*) echo "AKAMAI CDN"; return ;;
+      151.101.*|199.232.*) echo "FASTLY CDN"; return ;;
+      47.87.*|47.84.*|47.75.*|47.241.*|47.242.*|8.210.*|47.*) echo "ALIBABA CLOUD"; return ;;
+      71.18.*|163.181.*|153.43.*|177.0.*|71.*) echo "CDN LUAR"; return ;;
+      103.111.*|103.169.*|103.119.*|103.137.*|103.41.*|103.229.*|103.155.*) echo "SERVER INDO - Biznet"; return ;;
+      116.68.*|116.90.*|116.66.*|36.*|118.*|114.*|180.*|101.*) echo "SERVER INDO - Telkom"; return ;;
+      103.*|116.*|36.*|114.*|180.*|182.*|202.*|61.*) echo "SERVER INDO"; return ;;
+      *) echo "LAINNYA ($T)"; return ;;
+    esac
+  }
+  TMPFILE=$(mktemp)
+  while IFS= read -r LG; do
+    [ -z "$LG" ] && continue
+    TUJUAN=$(echo "$LG" | sed -n 's/.*-> //p' | awk '{print $1}' | sed 's/^tcp://;s/^udp://;s/:[0-9]*$//')
+    if [ -z "$TUJUAN" ]; then TUJUAN=$(echo "$LG" | sed -n "s/.*email: $user//p" | grep -oE "[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(:[0-9]+)?|[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(:[0-9]+)?" | head -1 | sed 's/:[0-9]*$//'); fi
+    if [ -z "$TUJUAN" ]; then TUJUAN=$(echo "$LG" | grep -oE "[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+" | tail -1 | sed 's/:[0-9]*$//'); fi
+    [ -z "$TUJUAN" ] && continue
+    if [ "$TUJUAN" = "$user" ]; then continue; fi
+    if [[ "$TUJUAN" == "127.0.0.1" || "$TUJUAN" == "8.8.8.8" || "$TUJUAN" == "8.8.4.4" || "$TUJUAN" == "1.1.1.1" || "$TUJUAN" == "1.0.0.0" || "$TUJUAN" == "1.0.0.1" || "$TUJUAN" == "146.112.41.2" || "$TUJUAN" == "146.112.41.3" || "$TUJUAN" == "208.67.222.222" || "$TUJUAN" == "208.67.220.220" || "$TUJUAN" == "9.9.9.9" ]]; then continue; fi
+    if [[ "$TUJUAN" == 146.112.* || "$TUJUAN" == 208.67.* ]]; then continue; fi
+    if [[ "$TUJUAN" == *ntp* || "$TUJUAN" == *canonical* || "$TUJUAN" == *lambda* || "$TUJUAN" == *arpa* ]]; then continue; fi
+    if [[ "$TUJUAN" == 185.125.* || "$TUJUAN" == 103.105.* || "$TUJUAN" == 91.189.* || "$TUJUAN" == 162.159.* ]]; then continue; fi
+    if [[ "$TUJUAN" == 182.161.* || "$TUJUAN" == 182.4.* || "$TUJUAN" == 140.* || "$TUJUAN" == 203.78.* || "$TUJUAN" == 112.215.* || "$TUJUAN" == 47.241.72.* ]]; then continue; fi
+    tebak_app "$TUJUAN" >> "$TMPFILE"
+  done < <(grep -F "email: $user" "$XRAY_LOG" | tail -n 30)
+  BROWSING_APP=$(sort "$TMPFILE" | uniq -c | sort -nr | awk '{c=$1; $1=""; sub(/^ /,""); print "     - " $0 " (" c "x)"}')
+  rm -f "$TMPFILE"
+  [ -z "$BROWSING_APP" ] && BROWSING_APP="     - (Gak browsing, mek konek tok)"
+  echo "------------------------------------------"
+  echo "$NO. user : $user"
+  echo "Online Jam : $JAM_LAST wib ($SELISIH detik lalu)"
+  echo "IP Saat Iki: $IP_TERAKHIR"
+  echo "Riwayat IP (user iki tok):"
+  printf "%s\n" "$IPS_USER" | while IFS= read -r ip; do [ -n "$ip" ] && printf "     [REAL] %s\n" "$ip"; done
+  echo "Device : $JUMLAH DEVICE (KIRA-KIRA - IP kecampur!)"
+  echo "Lagi Buka Opo Ae (KIRA-KIRA teko IP):"
+  printf "%s\n" "$BROWSING_APP"
+  echo ""
+done
+if [ "$TOTAL" -eq 0 ]; then
+  echo "------------------------------------------"
+  echo "Gak ono user ONLINE! (Kabeh offline > 1 menit)"
+  echo "------------------------------------------"
+fi
+echo "------------------------------------------"
+echo ""
+echo "👉 KAMU NOMER PIRO? KOMEN! 👈"
+echo "👉 SENG GAK ONO JENENG E, BERARTI OFFLINE! 👈"
+echo ""
+echo "      Autoscript By Arya Blitar"
+echo ""
+read -n 1 -s -r -p "Press any key to back on menu"
+menu
+BABIEOF
+chmod +x /usr/bin/babi
+cp /usr/bin/babi /usr/bin/babi-final-bagus
+babi
+````
 ## fix
 ````
 # === HAPUS CARA LAWAS IKI ===
